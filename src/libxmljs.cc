@@ -22,7 +22,7 @@ int xml_memory_used_last = 0;
 uv_async_t xml_memory_handle;
 uv_mutex_t xml_memory_mutex;
 
-void xml_memory_cb(uv_async_t* handle) {
+NAUV_WORK_CB(xml_memory_cb) {
     // if v8 is no longer running, don't try to adjust memory
     // this happens when the v8 vm is shutdown and the program is exiting
     // our cleanup routines for libxml will be called (freeing memory)
