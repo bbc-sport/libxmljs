@@ -121,6 +121,7 @@ LibXMLJS::LibXMLJS()
 
     uv_mutex_init(&xml_memory_mutex);
     uv_async_init(uv_default_loop(), &xml_memory_handle, xml_memory_cb);
+    uv_unref((uv_handle_t*) &xml_memory_handle);
 
     // populated debugMemSize (see xmlmemory.h/c) and makes the call to
     // xmlMemUsed work, this must happen first!
