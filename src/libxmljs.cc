@@ -41,6 +41,7 @@ NAUV_WORK_CB(xml_memory_cb) {
 
     uv_mutex_lock(&xml_memory_mutex);
     const int diff = xml_memory_used - xml_memory_used_last;
+    xml_memory_used_last = xml_memory_used;
     uv_mutex_unlock(&xml_memory_mutex);
 
     NanAdjustExternalMemory(diff);
