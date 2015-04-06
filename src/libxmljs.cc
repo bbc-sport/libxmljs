@@ -1,6 +1,7 @@
 // Copyright 2009, Squish Tech, LLC.
 
 #include <v8.h>
+#include <uv.h>
 
 #include <libxml/xmlmemory.h>
 
@@ -16,32 +17,18 @@ namespace libxmljs {
 LibXMLJS LibXMLJS::instance;
 
 // track how much memory libxml2 is using
-int xml_memory_used = 0;
+ssize_t xml_memory_diff = 0;
+uv_async_t xml_memory_handle;
+uv_mutex_t xml_memory_mutex;
 
-// wrapper for xmlMemMalloc to update v8's knowledge of memory used
-// the GC relies on this information
-void* xmlMemMallocWrap(size_t size)
-{
-    void* res = xmlMemMalloc(size);
+typedef struct alloc {
+    size_t size;
+    double data;
+} alloc_t;
 
-    // no need to udpate memory if we didn't allocate
-    if (!res)
-    {
-        return res;
-    }
+#define ALLOC_HEADER_SIZE offsetof(alloc, data)
 
-    const int diff = xmlMemUsed() - xml_memory_used;
-    xml_memory_used += diff;
-    NanAdjustExternalMemory(diff);
-    return res;
-}
-
-// wrapper for xmlMemFree to update v8's knowledge of memory used
-// the GC relies on this information
-void xmlMemFreeWrap(void* p)
-{
-    xmlMemFree(p);
-
+NAUV_WORK_CB(xml_memory_cb) {
     // if v8 is no longer running, don't try to adjust memory
     // this happens when the v8 vm is shutdown and the program is exiting
     // our cleanup routines for libxml will be called (freeing memory)
@@ -58,47 +45,99 @@ void xmlMemFreeWrap(void* p)
         return;
     }
 
-    const int diff = xmlMemUsed() - xml_memory_used;
-    xml_memory_used += diff;
+    uv_mutex_lock(&xml_memory_mutex);
+    const ssize_t diff = xml_memory_diff;
+    xml_memory_diff = 0;
+    uv_mutex_unlock(&xml_memory_mutex);
+
     NanAdjustExternalMemory(diff);
+}
+
+NAN_INLINE void xml_memory_update(ssize_t diff) {
+    if (diff == 0) {
+        return;
+    }
+
+    uv_mutex_lock(&xml_memory_mutex);
+
+    xml_memory_diff += diff;
+    uv_async_send(&xml_memory_handle);
+
+    uv_mutex_unlock(&xml_memory_mutex);
+}
+
+// wrapper for xmlMemMalloc to update v8's knowledge of memory used
+// the GC relies on this information
+void* xmlMemMallocWrap(size_t size)
+{
+    size += ALLOC_HEADER_SIZE;
+    alloc_t* header = (alloc_t*) malloc(size);
+
+    // no need to update memory if we didn't allocate
+    if (!header)
+    {
+        return NULL;
+    }
+
+    header->size = size;
+
+    xml_memory_update(size);
+
+    return (void*) ((uintptr_t) header + ALLOC_HEADER_SIZE);
+}
+
+// wrapper for xmlMemFree to update v8's knowledge of memory used
+// the GC relies on this information
+void xmlMemFreeWrap(void* ptr)
+{
+    alloc_t* header = (alloc_t*) ((uintptr_t) ptr - ALLOC_HEADER_SIZE);
+    size_t size = header->size;
+    free(header);
+
+    xml_memory_update(-size);
 }
 
 // wrapper for xmlMemRealloc to update v8's knowledge of memory used
 void* xmlMemReallocWrap(void* ptr, size_t size)
 {
-    void* res = xmlMemRealloc(ptr, size);
+    alloc_t* oldHeader = (alloc_t*) ((uintptr_t) ptr - ALLOC_HEADER_SIZE);
+    size_t old_size = oldHeader->size;
+
+    size += ALLOC_HEADER_SIZE;
+    alloc_t* newHeader = (alloc_t*) realloc(oldHeader, size);
 
     // if realloc fails, no need to update v8 memory state
-    if (!res)
+    if (!newHeader)
     {
-        return res;
+        return NULL;
     }
 
-    const int diff = xmlMemUsed() - xml_memory_used;
-    xml_memory_used += diff;
-    NanAdjustExternalMemory(diff);
-    return res;
+    xml_memory_update(size - old_size);
+
+    return (void*) ((uintptr_t) newHeader + ALLOC_HEADER_SIZE);
 }
 
 // wrapper for xmlMemoryStrdupWrap to update v8's knowledge of memory used
 char* xmlMemoryStrdupWrap(const char* str)
 {
-    char* res = xmlMemoryStrdup(str);
+    size_t len = strlen(str) + 1;
+    char* res = (char*) xmlMemMallocWrap(len);
 
-    // if strdup fails, no need to update v8 memory state
-    if (!res)
-    {
-        return res;
+    if (!res) {
+        return NULL;
     }
 
-    const int diff = xmlMemUsed() - xml_memory_used;
-    xml_memory_used += diff;
-    NanAdjustExternalMemory(diff);
+    memcpy((void*) res, (void*) str, len);
+
     return res;
 }
 
 LibXMLJS::LibXMLJS()
 {
+
+    uv_mutex_init(&xml_memory_mutex);
+    uv_async_init(uv_default_loop(), &xml_memory_handle, xml_memory_cb);
+    uv_unref((uv_handle_t*) &xml_memory_handle);
 
     // populated debugMemSize (see xmlmemory.h/c) and makes the call to
     // xmlMemUsed work, this must happen first!
@@ -107,9 +146,6 @@ LibXMLJS::LibXMLJS()
 
     // initialize libxml
     LIBXML_TEST_VERSION;
-
-    // initial memory usage
-    xml_memory_used = xmlMemUsed();
 }
 
 LibXMLJS::~LibXMLJS()
