@@ -18,7 +18,7 @@ LibXMLJS LibXMLJS::instance;
 
 // track how much memory libxml2 is using
 int xml_memory_used = 0;
-int xml_memory_used_last = 0;
+int xml_memory_used_delta = 0;
 uv_async_t xml_memory_handle;
 uv_mutex_t xml_memory_mutex;
 
@@ -40,7 +40,7 @@ NAUV_WORK_CB(xml_memory_cb) {
     }
 
     uv_mutex_lock(&xml_memory_mutex);
-    const int diff = xml_memory_used - xml_memory_used_last;
+    const int diff = xml_memory_used_delta;
     uv_mutex_unlock(&xml_memory_mutex);
 
     NanAdjustExternalMemory(diff);
@@ -48,8 +48,14 @@ NAUV_WORK_CB(xml_memory_cb) {
 
 NAN_INLINE void xml_memory_update() {
     uv_mutex_lock(&xml_memory_mutex);
-    xml_memory_used = xmlMemUsed();
-    uv_async_send(&xml_memory_handle);
+
+    xml_memory_used_delta = xmlMemUsed() - xml_memory_used;
+    xml_memory_used += xml_memory_used_delta;
+
+    if (xml_memory_used_delta != 0) {
+        uv_async_send(&xml_memory_handle);
+    }
+
     uv_mutex_unlock(&xml_memory_mutex);
 }
 
@@ -126,7 +132,7 @@ LibXMLJS::LibXMLJS()
     LIBXML_TEST_VERSION;
 
     // initial memory usage
-    xml_memory_used = xml_memory_used_last = xmlMemUsed();
+    xml_memory_used = xmlMemUsed();
 }
 
 LibXMLJS::~LibXMLJS()
