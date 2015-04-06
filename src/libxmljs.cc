@@ -46,7 +46,7 @@ void xml_memory_cb(uv_async_t* handle) {
     NanAdjustExternalMemory(diff);
 }
 
-inline void xml_memory_update() {
+NAN_INLINE void xml_memory_update() {
     uv_mutex_lock(&xml_memory_mutex);
     xml_memory_used = xmlMemUsed();
     uv_async_send(&xml_memory_handle);
