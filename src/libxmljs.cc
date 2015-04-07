@@ -48,20 +48,18 @@ NAUV_WORK_CB(xml_memory_cb) {
 }
 
 NAN_INLINE void xml_memory_update() {
-    uv_mutex_lock(&xml_memory_mutex);
-
     xml_memory_used = xmlMemUsed();
     if (xml_memory_used != xml_memory_used_last) {
         uv_async_send(&xml_memory_handle);
     }
-
-    uv_mutex_unlock(&xml_memory_mutex);
 }
 
 // wrapper for xmlMemMalloc to update v8's knowledge of memory used
 // the GC relies on this information
 void* xmlMemMallocWrap(size_t size)
 {
+    uv_mutex_lock(&xml_memory_mutex);
+
     void* res = xmlMemMalloc(size);
 
     // no need to udpate memory if we didn't allocate
@@ -72,6 +70,8 @@ void* xmlMemMallocWrap(size_t size)
 
     xml_memory_update();
 
+    uv_mutex_unlock(&xml_memory_mutex);
+
     return res;
 }
 
@@ -79,14 +79,20 @@ void* xmlMemMallocWrap(size_t size)
 // the GC relies on this information
 void xmlMemFreeWrap(void* p)
 {
+    uv_mutex_lock(&xml_memory_mutex);
+
     xmlMemFree(p);
 
     xml_memory_update();
+
+    uv_mutex_unlock(&xml_memory_mutex);
 }
 
 // wrapper for xmlMemRealloc to update v8's knowledge of memory used
 void* xmlMemReallocWrap(void* ptr, size_t size)
 {
+    uv_mutex_lock(&xml_memory_mutex);
+
     void* res = xmlMemRealloc(ptr, size);
 
     // if realloc fails, no need to update v8 memory state
@@ -97,12 +103,16 @@ void* xmlMemReallocWrap(void* ptr, size_t size)
 
     xml_memory_update();
 
+    uv_mutex_unlock(&xml_memory_mutex);
+
     return res;
 }
 
 // wrapper for xmlMemoryStrdupWrap to update v8's knowledge of memory used
 char* xmlMemoryStrdupWrap(const char* str)
 {
+    uv_mutex_lock(&xml_memory_mutex);
+
     char* res = xmlMemoryStrdup(str);
 
     // if strdup fails, no need to update v8 memory state
@@ -112,6 +122,8 @@ char* xmlMemoryStrdupWrap(const char* str)
     }
 
     xml_memory_update();
+
+    uv_mutex_unlock(&xml_memory_mutex);
 
     return res;
 }
