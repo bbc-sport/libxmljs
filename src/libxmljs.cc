@@ -38,22 +38,6 @@ NAN_INLINE void* mem_header_to_data(alloc_t* ptr) {
 }
 
 NAUV_WORK_CB(xml_memory_cb) {
-    // if v8 is no longer running, don't try to adjust memory
-    // this happens when the v8 vm is shutdown and the program is exiting
-    // our cleanup routines for libxml will be called (freeing memory)
-    // but v8 is already offline and does not need to be informed
-    // trying to adjust after shutdown will result in a fatal error
-#if (NODE_MODULE_VERSION > 0x000B)
-    if (v8::Isolate::GetCurrent() == 0)
-    {
-        return;
-    }
-#endif
-    if (v8::V8::IsDead())
-    {
-        return;
-    }
-
     uv_mutex_lock(&xml_memory_mutex);
     const ssize_t diff = xml_memory_diff;
     xml_memory_diff = 0;
@@ -69,6 +53,22 @@ NAN_INLINE void xml_memory_update(ssize_t diff) {
 
     uv_thread_t current_thread = uv_thread_self();
     if (uv_thread_equal(&xml_thread, &current_thread)) {
+        // if v8 is no longer running, don't try to adjust memory
+        // this happens when the v8 vm is shutdown and the program is exiting
+        // our cleanup routines for libxml will be called (freeing memory)
+        // but v8 is already offline and does not need to be informed
+        // trying to adjust after shutdown will result in a fatal error
+#if (NODE_MODULE_VERSION > 0x000B)
+        if (v8::Isolate::GetCurrent() == 0)
+        {
+            return;
+        }
+#endif
+        if (v8::V8::IsDead())
+        {
+            return;
+        }
+
         NanAdjustExternalMemory(diff);
     }
     else {
