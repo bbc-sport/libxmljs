@@ -83,9 +83,9 @@ NAN_INLINE void xml_memory_update(ssize_t diff) {
     }
 }
 
-// wrapper for xmlMemMalloc to update v8's knowledge of memory used
+// wrapper for malloc to update v8's knowledge of memory used
 // the GC relies on this information
-void* xmlMemMallocWrap(size_t size)
+void* xml_malloc(size_t size)
 {
     size += ALLOC_HEADER_SIZE;
     alloc_t* header = (alloc_t*) malloc(size);
@@ -103,9 +103,9 @@ void* xmlMemMallocWrap(size_t size)
     return mem_header_to_data(header);
 }
 
-// wrapper for xmlMemFree to update v8's knowledge of memory used
+// wrapper for free to update v8's knowledge of memory used
 // the GC relies on this information
-void xmlMemFreeWrap(void* ptr)
+void xml_free(void* ptr)
 {
     alloc_t* header = mem_data_to_header(ptr);
     size_t size = header->size;
@@ -114,8 +114,8 @@ void xmlMemFreeWrap(void* ptr)
     xml_memory_update(-size);
 }
 
-// wrapper for xmlMemRealloc to update v8's knowledge of memory used
-void* xmlMemReallocWrap(void* ptr, size_t size)
+// wrapper for realloc to update v8's knowledge of memory used
+void* xml_realloc(void* ptr, size_t size)
 {
     alloc_t* oldHeader = mem_data_to_header(ptr);
     size_t old_size = oldHeader->size;
@@ -134,11 +134,11 @@ void* xmlMemReallocWrap(void* ptr, size_t size)
     return mem_header_to_data(newHeader);
 }
 
-// wrapper for xmlMemoryStrdupWrap to update v8's knowledge of memory used
-char* xmlMemoryStrdupWrap(const char* str)
+// replacement for strdup to update v8's knowledge of memory used
+char* xml_strdup(const char* str)
 {
     size_t len = strlen(str) + 1;
-    char* res = (char*) xmlMemMallocWrap(len);
+    char* res = (char*) xml_malloc(len);
 
     if (!res) {
         return NULL;
@@ -157,10 +157,11 @@ LibXMLJS::LibXMLJS()
     uv_unref((uv_handle_t*) &xml_memory_handle);
     xml_thread = uv_thread_self();
 
-    // populated debugMemSize (see xmlmemory.h/c) and makes the call to
-    // xmlMemUsed work, this must happen first!
-    xmlMemSetup(xmlMemFreeWrap, xmlMemMallocWrap,
-            xmlMemReallocWrap, xmlMemoryStrdupWrap);
+    // set libxml up with wrappers for memory allocation,
+    // so we can keep track of memory usage to report to V8.
+    // this needs to happen before any use of libxml.
+    xmlMemSetup(xml_free, xml_malloc,
+            xml_realloc, xml_strdup);
 
     // initialize libxml
     LIBXML_TEST_VERSION;
