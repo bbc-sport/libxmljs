@@ -8,9 +8,9 @@
 
 NAN_INLINE int uv_thread_equal(const uv_thread_t* t1, const uv_thread_t* t2) {
 #ifdef _WIN32
-  return *t1 == *t2;
+    return *t1 == *t2;
 #else
-  return pthread_equal(*t1, *t2);
+    return pthread_equal(*t1, *t2);
 #endif
 }
 
