@@ -107,4 +107,4 @@ node_js:
     - iojs
 
 install:
-    - node-gyp rebuild
+    - node_modules/.bin/node-gyp rebuild
