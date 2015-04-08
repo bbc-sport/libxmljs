@@ -73,6 +73,7 @@ NAN_INLINE void xml_memory_update(ssize_t diff) {
         NanAdjustExternalMemory(diff);
     }
     else {
+        abort();
         uv_mutex_lock(&xml_memory_mutex);
 
         xml_memory_diff += diff;
