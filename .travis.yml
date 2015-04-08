@@ -105,6 +105,3 @@ node_js:
     - "0.12.1"
     - "0.12.2"
     - iojs
-
-before_install:
-  - npm update -g npm@2.7.3
