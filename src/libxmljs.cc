@@ -28,6 +28,14 @@ typedef struct alloc {
 
 #define ALLOC_HEADER_SIZE offsetof(alloc, data)
 
+NAN_INLINE alloc_t* mem_data_to_header(void* ptr) {
+    return (alloc_t*) ((uintptr_t) ptr - ALLOC_HEADER_SIZE);
+}
+
+NAN_INLINE void* mem_header_to_data(alloc_t* ptr) {
+    return (alloc_t*) ((uintptr_t) ptr + ALLOC_HEADER_SIZE);
+}
+
 NAUV_WORK_CB(xml_memory_cb) {
     // if v8 is no longer running, don't try to adjust memory
     // this happens when the v8 vm is shutdown and the program is exiting
@@ -85,14 +93,14 @@ void* xmlMemMallocWrap(size_t size)
 
     xml_memory_update(size);
 
-    return (void*) ((uintptr_t) header + ALLOC_HEADER_SIZE);
+    return mem_header_to_data(header);
 }
 
 // wrapper for xmlMemFree to update v8's knowledge of memory used
 // the GC relies on this information
 void xmlMemFreeWrap(void* ptr)
 {
-    alloc_t* header = (alloc_t*) ((uintptr_t) ptr - ALLOC_HEADER_SIZE);
+    alloc_t* header = mem_data_to_header(ptr);
     size_t size = header->size;
     free(header);
 
@@ -102,7 +110,7 @@ void xmlMemFreeWrap(void* ptr)
 // wrapper for xmlMemRealloc to update v8's knowledge of memory used
 void* xmlMemReallocWrap(void* ptr, size_t size)
 {
-    alloc_t* oldHeader = (alloc_t*) ((uintptr_t) ptr - ALLOC_HEADER_SIZE);
+    alloc_t* oldHeader = mem_data_to_header(ptr);
     size_t old_size = oldHeader->size;
 
     size += ALLOC_HEADER_SIZE;
@@ -116,7 +124,7 @@ void* xmlMemReallocWrap(void* ptr, size_t size)
 
     xml_memory_update(size - old_size);
 
-    return (void*) ((uintptr_t) newHeader + ALLOC_HEADER_SIZE);
+    return mem_header_to_data(newHeader);
 }
 
 // wrapper for xmlMemoryStrdupWrap to update v8's knowledge of memory used
