@@ -20,6 +20,7 @@ LibXMLJS LibXMLJS::instance;
 ssize_t xml_memory_diff = 0;
 uv_async_t xml_memory_handle;
 uv_mutex_t xml_memory_mutex;
+uv_thread_t xml_thread;
 
 typedef struct alloc {
     size_t size;
@@ -66,14 +67,20 @@ NAN_INLINE void xml_memory_update(ssize_t diff) {
         return;
     }
 
-    uv_mutex_lock(&xml_memory_mutex);
-
-    xml_memory_diff += diff;
-    if (xml_memory_diff != 0) {
-        uv_async_send(&xml_memory_handle);
+    uv_thread_t current_thread = uv_thread_self();
+    if (uv_thread_equal(&xml_thread, &current_thread)) {
+        NanAdjustExternalMemory(diff);
     }
+    else {
+        uv_mutex_lock(&xml_memory_mutex);
 
-    uv_mutex_unlock(&xml_memory_mutex);
+        xml_memory_diff += diff;
+        if (xml_memory_diff != 0) {
+            uv_async_send(&xml_memory_handle);
+        }
+
+        uv_mutex_unlock(&xml_memory_mutex);
+    }
 }
 
 // wrapper for xmlMemMalloc to update v8's knowledge of memory used
@@ -148,6 +155,7 @@ LibXMLJS::LibXMLJS()
     uv_mutex_init(&xml_memory_mutex);
     uv_async_init(uv_default_loop(), &xml_memory_handle, xml_memory_cb);
     uv_unref((uv_handle_t*) &xml_memory_handle);
+    xml_thread = uv_thread_self();
 
     // populated debugMemSize (see xmlmemory.h/c) and makes the call to
     // xmlMemUsed work, this must happen first!
