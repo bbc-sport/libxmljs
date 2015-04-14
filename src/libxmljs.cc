@@ -76,7 +76,7 @@ NAN_INLINE void xml_memory_update(ssize_t diff) {
         uv_mutex_lock(&xml_memory_mutex);
 
         xml_memory_diff += diff;
-        size_t abs_diff = diff < 0 ? -diff : diff;
+        size_t abs_diff = xml_memory_diff < 0 ? -xml_memory_diff : xml_memory_diff;
         if (abs_diff > 0x10000) {
             uv_async_send(&xml_memory_handle);
         }
